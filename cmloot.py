@@ -33,14 +33,22 @@ from io import BytesIO
 from ldap3 import Server, Connection, ALL
 
 def connect_to_sccm(address, username, password, domain, lmhash, nthash, options, appendToInv):
+    if options.debug:
+        logging.debug(f"Attempting to connect to SCCM at {address}")
     try:
         smbClient = SMBConnection(address, options.target_ip, sess_port=int(options.port))
         if options.k is True:
+            if options.debug:
+                logging.debug("Using Kerberos authentication")
             smbClient.kerberosLogin(username, password, domain, lmhash, nthash, options.aesKey, options.dc_ip )
         else:
+            if options.debug:
+                logging.debug("Using standard SMB authentication")
             smbClient.login(username, password, domain, lmhash, nthash)
         try:
             def get_files_in_folder(targetfolder):
+                if options.debug:
+                    logging.debug(f"Getting files in folder: {targetfolder}")
                 files = []
                 objects = smbClient.listPath("SCCMContentLib$", targetfolder + "\\*")
                 for i in objects:
@@ -51,6 +59,8 @@ def connect_to_sccm(address, username, password, domain, lmhash, nthash, options
                 return files
 
             def get_folders_in_folder(targetfolder):
+                if options.debug:
+                    logging.debug(f"Getting subfolders in folder: {targetfolder}")
                 folders = []
                 objects = smbClient.listPath("SCCMContentLib$", targetfolder + "\\*")
                 for i in objects:
@@ -61,10 +71,14 @@ def connect_to_sccm(address, username, password, domain, lmhash, nthash, options
                 return folders
             
             def write_to_file(filepath):
+                if options.debug:
+                    logging.debug(f"Writing to file: {inventory_file}")
                 outfile = open(inventory_file, 'a')
                 outfile.write(filepath)
             
             def create_inventory():
+                if options.debug:
+                    logging.debug("Starting inventory creation")
                 if os.path.exists(inventory_file) and not appendToInv:
                     print("[+]", inventory_file, "exists. Remove it if you want to recreate the inventory.")
                     return
@@ -78,11 +92,14 @@ def connect_to_sccm(address, username, password, domain, lmhash, nthash, options
 
                 # find all files in all folders
                 for folders in get_folders_in_folder("DataLib"):
+                    print("[+] Access to SCCMContentLib on", address)
                     folders = folders.split("\\SCCMContentLib$\\")[1]
                     folders = folders.strip()       # remove ending newline
                     # getting files in \DataLib\*\<here>
                     files = get_files_in_folder(folders)
                     for file in files:
+                        if options.debug:
+                            logging.debug(f"Writing file: {file}")
                         write_to_file(file)
                     # going deeper \DataLib\*\*\<here>
                     while folders:                  # if more folders exist
@@ -101,6 +118,8 @@ def connect_to_sccm(address, username, password, domain, lmhash, nthash, options
                     print("[+]", inventory_file, "created")
 
             def downloadfiles():
+                if options.debug:
+                    logging.debug("Starting file download process")
                 # download interesting file
                 inventory_file = options.cmlootdownload
                 lootpath = "CMLootOut"
@@ -148,8 +167,12 @@ def connect_to_sccm(address, username, password, domain, lmhash, nthash, options
 
             inventory_file = options.cmlootinventory
             if options.cmlootinventory:
+                if options.debug:
+                    logging.debug(f"Creating inventory file: {inventory_file}")
                 create_inventory()
             if options.cmlootdownload:
+                if options.debug:
+                    logging.debug(f"Downloading files from inventory: {options.cmlootdownload}")
                 downloadfiles()
 
         except Exception as e:
@@ -168,6 +191,8 @@ def find_sccm_servers(domain, username, password, ldap_port):
     """
     Finds Configuration Manager server via LDAP query and writes to file
     """
+    if options.debug:
+        logging.debug(f"Searching for SCCM servers in domain: {domain}")
     filename = "./sccmhosts.txt"
     ldap_server = domain  
     ldap_user = username + "@" + domain
@@ -200,6 +225,8 @@ def fqdn_to_base_dn(fqdn):
     """
     Convert a Fully Qualified Domain Name (FQDN) to a Base DN (Distinguished Name) format.
     """
+    if options.debug:
+        logging.debug(f"Converting FQDN to Base DN: {fqdn}")
     components = fqdn.split('.')
     base_dn_components = [f"DC={component}" for component in components]
     base_dn = ','.join(base_dn_components)
@@ -209,6 +236,8 @@ def sort_and_uniq_file(file_path):
     """
     Sort the contents of a file and remove duplicates (ignoring case).
     """
+    if options.debug:
+        logging.debug(f"Sorting and removing duplicates from file: {file_path}")
     try:
         with open(file_path, 'r') as file:
             lines = file.readlines()
@@ -271,7 +300,7 @@ def main():
 
     if options.debug is True:
         logging.getLogger().setLevel(logging.DEBUG)
-        # Print the Library's installation path
+        logging.debug("Debug mode enabled")
         logging.debug(version.getInstallationPath())
     else:
         logging.getLogger().setLevel(logging.INFO)
@@ -298,11 +327,15 @@ def main():
         nthash = ''
 
     if options.findsccmservers:
+        if options.debug:
+            logging.debug("Starting SCCM server discovery")
         find_sccm_servers(domain, username, password, options.ldapport)
         if not options.target_file:
             sys.exit(0)
     
     if options.target_file:
+        if options.debug:
+            logging.debug(f"Reading targets from file: {options.target_file}")
         try:
             targets = open(options.target_file, 'r').readlines()
         except Exception as e:
@@ -318,6 +351,8 @@ def main():
             options.target_ip = t
             connect_to_sccm(address, username, password, domain, lmhash, nthash, options, True)
     else:
+        if options.debug:
+            logging.debug(f"Connecting to single target: {address}")
         connect_to_sccm(address, username, password, domain, lmhash, nthash, options, False)
 
     
